@@ -86,16 +86,78 @@ void APlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
-	EnemyDetectionCollider->OnComponentBeginOverlap.
-	AddDynamic(this, &APlayerCharacter::OnEnemyDetectionBeginOverlap);
-	EnemyDetectionCollider->OnComponentEndOverlap.
-	AddDynamic(this, &APlayerCharacter::OnEnemyDetectionEndOverlap);
+	EnemyDetectionCollider->OnComponentBeginOverlap.AddDynamic(this, &APlayerCharacter::OnEnemyDetectionBeginOverlap);
+	EnemyDetectionCollider->OnComponentEndOverlap.AddDynamic(this, &APlayerCharacter::OnEnemyDetectionEndOverlap);
+
+	TSet<AActor*> NearActors;
+	EnemyDetectionCollider->GetOverlappingActors(NearActors);
+
+	for (auto& EnemyActor : NearActors)
+	{
+		if (Cast<AEnemyBase>(EnemyActor))
+		{
+			NearbyEnemies.Add(EnemyActor);
+		}
+	}
 }
 
 // Called every frame
 void APlayerCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	FocusTarget();
+
+	if (Rolling)
+	{
+		AddMovementInput(GetActorForwardVector(), 600 * GetWorld()->GetDeltaSeconds());
+	}
+	else if (Stumbling && MovingBackwards)
+	{
+		AddMovementInput(-GetActorForwardVector(), 40.0f * GetWorld()->GetDeltaSeconds());
+	}
+	else if (Attacking && AttackDamaging)
+	{
+		TSet<AActor*>WeaponOverlappingActors;
+		Weapon->GetOverlappingActors(WeaponOverlappingActors);
+
+		for (AActor* HitActor : WeaponOverlappingActors)
+		{
+			// making sure character doesn't hitr himself
+			if (HitActor == this)
+			{
+				continue;
+			}
+
+			if (!AttackHitActors.Contains(HitActor))
+			{
+				float AppliedDamage = UGameplayStatics::ApplyDamage(HitActor, 1.0f, GetController(), this, UDamageType::StaticClass());
+
+				if (AppliedDamage > 0.0f)
+				{
+					AttackHitActors.Add(HitActor);
+
+					GetWorld()->GetFirstPlayerController()->PlayerCameraManager->StartCameraShake(CameraShakeMinor);
+				}
+			}
+		}
+	}
+
+	if (Target != NULL && TargetLocked)
+	{
+		FVector TargetDirection = Target->GetActorLocation() - GetActorLocation();
+
+		if (TargetDirection.Size2D() > 400)
+		{
+			FRotator Difference = UKismetMathLibrary::NormalizedDeltaRotator
+			(Controller->GetControlRotation(), TargetDirection.ToOrientationRotator());
+
+			if (FMath::Abs(Difference.Yaw) > 30.0f)
+			{
+				AddControllerYawInput(DeltaTime * -Difference.Yaw * 0.5f);
+			}
+		}
+	}
 }
 
 // Called to bind functionality to input
@@ -124,18 +186,42 @@ void APlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 
 void APlayerCharacter::TurnAtRate(float Rate)
 {
+	AddControllerYawInput(Rate * BaseTurnRate * GetWorld()->GetDeltaSeconds());
 }
 
 void APlayerCharacter::LookUpAtRate(float Rate)
 {
+	AddControllerPitchInput(Rate * BaseLookUpRate * GetWorld()->GetDeltaSeconds());
 }
 
 void APlayerCharacter::MoveForward(float Value)
 {
+	if ((Controller != NULL) && (Value != 0.0f) && !Attacking && !Rolling && !Stumbling)
+	{
+		const FRotator Rotation = Controller->GetControlRotation();
+		const FRotator YawRotation(0, Rotation.Yaw, 0);
+
+		const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+
+		AddMovementInput(Direction, Value);
+	}
+
+	InputDirection.X = Value;
 }
 
 void APlayerCharacter::MoveRight(float Value)
 {
+	if ((Controller != NULL) && (Value != 0.0f) && !Attacking && !Rolling && !Stumbling)
+	{
+		const FRotator Rotation = Controller->GetControlRotation();
+		const FRotator YawRotation(0, Rotation.Yaw, 0);
+
+		const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+
+		AddMovementInput(Direction, Value);
+	}
+
+	InputDirection.Y = Value;
 }
 
 void APlayerCharacter::CycleTarget(bool Clockwise)
