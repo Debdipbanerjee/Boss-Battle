@@ -224,48 +224,11 @@ void AEnemyBase::StateDead()
 
 void AEnemyBase::FocusTarget()
 {
-	AAIController* Control = Cast<AAIController>(GetController());
-	Control->SetFocus(Target);
 }
 
 float AEnemyBase::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
-	if (DamageCauser == this)
-	{
-		return 0.0f;
-	}
-
-	if (!Interruptable)
-	{
-		return DamageAmount;
-	}
-
-	EndAttack();
-	SetMovingBackwards(false);
-	SetMovingForward(false);
-
-	Stumbling = true;
-	SetState(State::STUMBLE);
-	Cast<AAIController>(Controller)->StopMovement();
-
-	int AnimationIndex;
-
-	do
-	{
-		AnimationIndex = FMath::RandRange(0, TakeHit_StumbleBackwards.Num() - 1);
-	} 
-	while (AnimationIndex == LastStumbleIndex);
-
-	PlayAnimMontage(TakeHit_StumbleBackwards[AnimationIndex]);
-	LastStumbleIndex = AnimationIndex;
-
-	FVector Direction = DamageCauser->GetActorLocation() - GetActorLocation();
-	Direction = FVector(Direction.X, Direction.Y, 0);
-
-	FRotator Rotation = FRotationMatrix::MakeFromX(Direction).Rotator();
-	SetActorRotation(Rotation);
-
-	return DamageAmount;
+	return 0.0f;
 }
 
 void AEnemyBase::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
