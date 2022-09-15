@@ -286,11 +286,13 @@ void APlayerCharacter::CycleTarget(bool Clockwise)
 }
 
 void APlayerCharacter::CycleTargetClockwise()
-{
+{ 
+	CycleTarget(true);
 }
 
 void APlayerCharacter::CycleTargetCounterClockwise()
 {
+	CycleTarget(false);
 }
 
 void APlayerCharacter::LookAtSmooth()
@@ -303,7 +305,34 @@ void APlayerCharacter::LookAtSmooth()
 
 float APlayerCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
-	return 0.0f;
+	if (DamageCauser == this || Rolling)
+	{
+		return 0.0f;
+	}
+
+	EndAttack();
+	SetMovingBackwards(false);
+	SetMovingForward(false);
+	Stumbling = true;
+
+	int AnimationIndex;
+
+	do
+	{
+		AnimationIndex = FMath::RandRange(0, TakeHit_StumbleBackwards.Num() - 1);
+	} while (AnimationIndex == LastStumbleIndex);
+
+	PlayAnimMontage(TakeHit_StumbleBackwards[AnimationIndex]);
+	LastStumbleIndex = AnimationIndex;
+
+	FVector Direction = DamageCauser->GetActorLocation() - GetActorLocation();
+	Direction - FVector(Direction.X, Direction.Y, 0);
+
+	FRotator Rotation = FRotationMatrix::MakeFromX(Direction).Rotator();
+
+	SetActorRotation(Rotation);
+
+	return DamageAmount;
 }
 
 void APlayerCharacter::OnEnemyDetectionBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)

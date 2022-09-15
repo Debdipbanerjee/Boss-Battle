@@ -226,18 +226,81 @@ void APlayerCharacter::MoveRight(float Value)
 
 void APlayerCharacter::CycleTarget(bool Clockwise)
 {
+	AActor* SuitableTarget = NULL;
+
+	if (Target)
+	{
+		FVector CameraLocation = Cast<APlayerController>(GetController())->PlayerCameraManager->GetCameraLocation();
+
+		FRotator TargetDirection = (Target->GetActorLocation() - CameraLocation).ToOrientationRotator();
+
+		float BestYawDifference = INFINITY;
+
+		for (auto& NearEnemy : NearbyEnemies)
+		{
+			if (NearEnemy == Target)
+			{
+				continue;
+			}
+
+			FVector NearEnemyDirection = NearEnemy->GetActorLocation() - CameraLocation;
+			FRotator Difference = UKismetMathLibrary::NormalizedDeltaRotator(NearEnemyDirection.ToOrientationRotator(), TargetDirection);
+
+			if ((Clockwise && Difference.Yaw <= 0.0f) || (!Clockwise && Difference.Yaw >= 0.0f))
+			{
+				continue;
+			}
+
+			float YawDifference = FMath::Abs(Difference.Yaw);
+			if (YawDifference < BestYawDifference)
+			{
+				BestYawDifference = YawDifference;
+				SuitableTarget = NearEnemy;
+			}
+		}
+	}
+	else
+	{
+		float BestDistance = INFINITY;
+
+		for (auto& NearEnemy : NearbyEnemies)
+		{
+			float Distance = FVector::Dist(GetActorLocation(), NearEnemy->GetActorLocation());
+			if (Distance < BestDistance)
+			{
+				BestDistance = Distance;
+				SuitableTarget = NearEnemy;
+			}
+		}
+	}
+
+	if (SuitableTarget != NULL)
+	{
+		Target = SuitableTarget;
+
+		if (!TargetLocked)
+		{
+			SetInCombat(true);
+		}
+	}
 }
 
 void APlayerCharacter::CycleTargetClockwise()
-{
+{ 
+	CycleTarget(true);
 }
 
 void APlayerCharacter::CycleTargetCounterClockwise()
 {
+	CycleTarget(false);
 }
 
 void APlayerCharacter::LookAtSmooth()
 {
+	if (!Rolling)
+	{
+		Super::LookAtSmooth();
+	}
 }
 
 float APlayerCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
@@ -247,10 +310,18 @@ float APlayerCharacter::TakeDamage(float DamageAmount, FDamageEvent const& Damag
 
 void APlayerCharacter::OnEnemyDetectionBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
+	if (Cast<AEnemyBase>(OtherActor) && !NearbyEnemies.Contains(OtherActor))
+	{
+		NearbyEnemies.Add(OtherActor);
+	}
 }
 
 void APlayerCharacter::OnEnemyDetectionEndOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
 {
+	if (Cast<AEnemyBase>(OtherActor) && NearbyEnemies.Contains(OtherActor))
+	{
+		NearbyEnemies.Remove(OtherActor);
+	}
 }
 
 void APlayerCharacter::Attack()
@@ -277,29 +348,92 @@ void APlayerCharacter::EndAttack()
 
 void APlayerCharacter::Roll()
 {
+	if (Rolling || Stumbling)
+	{
+		return;
+	}
+
+	EndAttack();
+
+	if (InputDirection != FVector::ZeroVector)
+	{
+		FRotator PlayerRotZeroPitch = Controller->GetControlRotation();
+		PlayerRotZeroPitch.Pitch = 0;
+
+		FVector PlayerRight = FRotationMatrix(PlayerRotZeroPitch).GetUnitAxis(EAxis::Y);
+		FVector PlayerForward = FRotationMatrix(PlayerRotZeroPitch).GetUnitAxis(EAxis::X);
+
+		FVector DodgeDir = PlayerForward * InputDirection.X + PlayerRight * InputDirection.Y;
+
+		RollRotation = DodgeDir.ToOrientationRotator();
+	}
+	else
+	{
+		RollRotation = GetActorRotation();
+	}
+
+	SetActorRotation(RollRotation);
+
+	PlayAnimMontage(CombatRoll);
+	Rolling = true;
 }
 
 void APlayerCharacter::StartRoll()
 {
+	Rolling = true;
+
+	GetCharacterMovement()->MaxWalkSpeed = 600.0f;
+
+	EndAttack();
 }
 
 void APlayerCharacter::EndRoll()
 {
+	Rolling = false;
+
+	GetCharacterMovement()->MaxWalkSpeed = TargetLocked ? CombatMovementSpeed : PassiveMovementSpeed;
 }
 
 void APlayerCharacter::RollRotateSmooth()
 {
+	FRotator SmoothedRotation = FMath::Lerp(GetActorRotation(), RollRotation, RotationSmoothing * GetWorld()->DeltaTimeSeconds);
+
+	SetActorRotation(SmoothedRotation);
 }
 
 void APlayerCharacter::FocusTarget()
 {
+	if (Target != NULL)
+	{
+		if (FVector::Dist(GetActorLocation(), Target->GetActorLocation()) >= TargetLockDistance)
+		{
+			ToggleCombatMode();
+		}
+	}
 }
 
 void APlayerCharacter::ToggleCombatMode()
 {
+	if (!TargetLocked)
+	{
+		CycleTarget();
+	}
+	else
+	{
+		SetInCombat(false);
+	}
 }
 
 void APlayerCharacter::SetInCombat(bool InCombat)
 {
+	TargetLocked = InCombat;
+
+	GetCharacterMovement()->bOrientRotationToMovement = !TargetLocked;
+	GetCharacterMovement()->MaxWalkSpeed = TargetLocked ? CombatMovementSpeed : PassiveMovementSpeed;
+
+	if (!TargetLocked)
+	{
+		Target = NULL;
+	}
 }
 

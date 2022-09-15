@@ -64,7 +64,8 @@ public:
 
 	void LookAtSmooth();
 
-	float TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser);
+	float TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent,
+	AController* EventInstigator, AActor* DamageCauser);
 
 	UPROPERTY(EditAnywhere, Category = "Animations")
 	TArray<class UAnimMontage*> Attacks;
